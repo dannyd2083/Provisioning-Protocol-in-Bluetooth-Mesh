@@ -140,6 +140,7 @@ def start_outputOOB_provisioning(conn):
                             device_public_key[1:]
                     )
 
+                    logger.info(f'Build confirmation_inputs: {confirmation_inputs.hex()}')
                     # Receive device confirmation
                     device_confirmation = conn.recv()
                     logger.info(f'Received Device Confirmation: {device_confirmation.hex()}')
@@ -239,7 +240,7 @@ def start_outputOOB_provisioning(conn):
         conn.close()
         logger.info("Connection closed.")
 
-def start_server(host='127.0.0.1', port=65433):
+def start_server(host='127.0.0.1', port=65432):
     server = listen(port, bindaddr=host)
     logger.info(f'Server listening on {host}:{port}')
 
