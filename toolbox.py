@@ -78,7 +78,14 @@ def s1(M):
     M is a non-zero length octet array or ASCII encoded string
     """
     #TODO: Implement this function
-    return b'\x00'
+    if isinstance(M, str):
+        M = M.encode('ascii')
+    ZERO = b'\x00' * 16
+    cmac = CMAC.new(ZERO, ciphermod=AES)
+
+    cmac.update(M)
+
+    return cmac.digest()
 
 def k1(N, SALT, P):
     """
@@ -93,4 +100,11 @@ def k1(N, SALT, P):
     - bytes: The derived key.
     """
     # TODO: Implement this function
-    return b'\x00'
+    cmac_salt = CMAC.new(SALT, ciphermod=AES)
+    cmac_salt.update(N)
+    T = cmac_salt.digest()  # T is 128 bits (16 bytes)
+
+    # k1(N, SALT, P) = AES-CMAC_T(P)
+    cmac_t = CMAC.new(T, ciphermod=AES)
+    cmac_t.update(P)
+    return cmac_t.digest()
