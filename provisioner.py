@@ -141,21 +141,23 @@ def start_outputOOB_provisioning(conn):
                     )
 
                     logger.info(f'Build confirmation_inputs: {confirmation_inputs.hex()}')
+
+                    confirmation, random_value = calculate_confirmation(
+                        confirmation_inputs,
+                        auth_value,
+                        private_key,
+                        device_public_key_x,
+                        device_public_key_y
+                    )
+                    conf_message = PROVISIONING_CONFIRMATION_OPCODE + confirmation
+                    conn.send(conf_message)
+                    logger.info(f'Sent Confirmation: {conf_message.hex()}')
+
                     # Receive device confirmation
                     device_confirmation = conn.recv()
                     logger.info(f'Received Device Confirmation: {device_confirmation.hex()}')
 
                     if device_confirmation[0:1] == PROVISIONING_CONFIRMATION_OPCODE:
-                        confirmation, random_value = calculate_confirmation(
-                            confirmation_inputs,
-                            auth_value,
-                            private_key,
-                            device_public_key_x,
-                            device_public_key_y
-                        )
-                        conf_message = PROVISIONING_CONFIRMATION_OPCODE + confirmation
-                        conn.send(conf_message)
-                        logger.info(f'Sent Confirmation: {conf_message.hex()}')
 
                         # Receive device random
                         device_random = conn.recv()
