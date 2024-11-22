@@ -161,16 +161,15 @@ def start_outputOOB_provisioning(host, port):
                             conf_message = PROVISIONING_CONFIRMATION_OPCODE + confirmation
                             conn.send(conf_message)
                             logger.info(f'Sent Confirmation: {conf_message.hex()}')
-
-                            random_message = PROVISIONING_RANDOM_OPCODE + random_value
-                            conn.send(random_message)
-                            logger.info(f'Sent Random Value: {random_message.hex()}')
-
                             # Receive provisioner random
                             prov_random = conn.recv()
+
                             logger.info(f'Received Provisioner Random: {prov_random.hex()}')
                             if prov_random[0:1] == PROVISIONING_RANDOM_OPCODE:
                                 prov_random_value = prov_random[1:]
+                                random_message = PROVISIONING_RANDOM_OPCODE + random_value
+                                conn.send(random_message)
+                                logger.info(f'Sent Random Value: {random_message.hex()}')
                                 cal_confirmation, _ = calculate_confirmation(confirmation_inputs, auth_value,
                                                                              private_key,
                                                                              provisioner_public_key_x,

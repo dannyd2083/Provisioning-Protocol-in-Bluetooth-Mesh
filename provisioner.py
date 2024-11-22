@@ -159,15 +159,16 @@ def start_outputOOB_provisioning(conn):
 
                     if device_confirmation[0:1] == PROVISIONING_CONFIRMATION_OPCODE:
 
+                        # Send provisioner random
+                        random_message = PROVISIONING_RANDOM_OPCODE + random_value
+                        conn.send(random_message)
+                        logger.info(f'Sent Random: {random_message.hex()}')
+
                         # Receive device random
                         device_random = conn.recv()
                         logger.info(f'Received Device Random: {device_random.hex()}')
                         if device_random[0:1] == PROVISIONING_RANDOM_OPCODE:
                             device_random_value = device_random[1:]  # Remove opcode
-                            # Send provisioner random
-                            random_message = PROVISIONING_RANDOM_OPCODE + random_value
-                            conn.send(random_message)
-                            logger.info(f'Sent Random: {random_message.hex()}')
 
                             cal_confirmation, _ = calculate_confirmation(confirmation_inputs, auth_value, private_key,
                                                                      device_public_key_x, device_public_key_y,
