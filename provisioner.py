@@ -185,10 +185,13 @@ def start_outputOOB_provisioning(conn):
                             # Calculate salts
                             confirmation_salt = s1(confirmation_inputs)
                             prov_salt = s1(confirmation_salt + random_value + device_random_value)
+                            logger.info(f"prov_salt:{prov_salt.hex()}")
                             # Calculate session key using k1
                             session_key = k1(dhkey,prov_salt,b'prsk')
+                            logger.info(f"session_key:{session_key.hex()}")
                             # Calculate nonce using k1, shall be the last 13 least sig octets
                             nonce =k1(dhkey,prov_salt,b'prsn')[:13]
+                            logger.info(f"nonce:{nonce.hex()}")
                             # Prepare provisioning data
                             prov_data = NetworkKey + KeyIndex + Flags + IVIndex + UnicastAddress
                             # Create cipher

