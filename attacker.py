@@ -250,7 +250,6 @@ def fake_dev(s_dev, s_prov, data):
             complete_message = PROVISIONING_COMPLETE_OPCODE
             logger.info("Sending fake COMPLETE message to provisioner")
             s_prov.send(complete_message)
-
             return
 
         except Exception as e:
@@ -258,6 +257,10 @@ def fake_dev(s_dev, s_prov, data):
             if device_connected:
                 s_dev.send(data)
             return
+
+    elif data[0:1] == PROVISIONING_DATA_OPCODE:
+        logger.info("Received Close link message")
+        return
 
     elif data[0:1] == LINK_CLOSE_OPCODE:
         if device_connected:
@@ -280,7 +283,7 @@ def sniff():
     server = listen(dev_port, bindaddr=dev_host)
     dev_conn = server.wait_for_connection()
 
-    sockets = [dev_conn, prov_conn]
+
 
     device_alive = True  # Flag to track device connection status
 
@@ -290,30 +293,23 @@ def sniff():
             for s in readable:
                 if s == dev_conn and device_alive:
                     try:
-                        data = dev_conn.recv()
-                        if not data:  # Connection closed
-                            raise EOFError("Device connection closed")
-                        fake_prov(prov_conn, data)
+                        d = dev_conn.recv()
+                        fake_prov(prov_conn, d)
                     except Exception as e:
-                        logger.info(f"Device connection issue: {e}")
+                        logger.info(f"Device connection close: {e}")
                         device_alive = False  # Mark device as disconnected
-                        # Remove device socket from select list
-                        sockets = [prov_conn]
-                        # Continue with provisioner connection
                         continue
 
                 elif s == prov_conn:
                     try:
-                        data = prov_conn.recv()
-                        if not data:  # Connection closed
-                            raise EOFError("Provisioner connection closed")
+                        d = prov_conn.recv()
                         if device_alive:
-                            fake_dev(dev_conn, s, data)
+                            fake_dev(dev_conn, s, d)
                         else:
                             # Device is disconnected, but we still process provisioner data
-                            fake_dev(None, s, data)
+                            fake_dev(None, s, d)
                     except Exception as e:
-                        logger.error(f"Provisioner connection error: {e}")
+                        logger.info(f"Provisioner connection close: {e}")
                         return  # Exit if provisioner connection fails
 
         except Exception as e:
